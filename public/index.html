@@ -98,6 +98,8 @@
   <script src="./lib/stockfish.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mithril@2.0.4/mithril.min.js"></script>
   <script>
+    const NO_EMBEDDED_NNUE = window.location.search.match("no-embedded-nnue");
+
     const $ = (...args) => document.querySelector(...args);
 
     const formatMB = (n) => {
@@ -251,6 +253,25 @@
           .finally(() => m.redraw());
       };
 
+      const onSelectNnueFile = async (e) => {
+        const selected = e.currentTarget.files[0];
+        if (selected) {
+          //
+          // TODO:
+          // On Archlinux Chromium 92.0.4515.107, most of times this code fails with the error saying:
+          //   TypeError: Failed to execute 'decode' on 'TextDecoder': The provided ArrayBufferView value must not be shared.
+          // On the other hand, either Chrome with the same version or Firefox never fail.
+          //
+          const FS = stockfish.FS;
+          const buffer = await selected.arrayBuffer();
+          const array = new Uint8Array(buffer);
+          const filename = "/" + selected.name;
+          FS.writeFile(filename, array);
+          stockfish.postMessage(`setoption name EvalFile value ${filename}`);
+          stockfish.postMessage(`eval`);
+        }
+      };
+
       const oninit = () => {
         stockfish_state = "LOADING";
       };
@@ -295,13 +316,15 @@
             m("div", [
               "- download: ",
               m(RequestProgress, {
-                url: "./lib/stockfish.wasm",
+                url: NO_EMBEDDED_NNUE
+                  ? "./lib/stockfish-no-embedded-nnue.wasm"
+                  : "./lib/stockfish.wasm",
                 onFinishDownload,
               }),
             ]),
-            m("div", `- stockfish_state: ${stockfish_state}`),
+            m("div", `- stockfish state: ${stockfish_state}`),
             m("div", [
-              m("span", { style: "margin-right: 5px;" }, "- tail_mode:"),
+              m("span", { style: "margin-right: 5px;" }, "- tail mode:"),
               m(
                 "span",
                 {
@@ -312,6 +335,28 @@
                   },
                 },
                 [tail_mode ? "[x]" : "[ ]"]
+              ),
+            ]),
+            m("div", [
+              "- nnue file: ",
+              m("input", {
+                type: "file",
+                disabled: !is_ready,
+                onchange: onSelectNnueFile,
+              }),
+              m(
+                "span",
+                {
+                  style: "cursor: pointer;",
+                  onclick: () =>
+                    window.alert(
+                      [
+                        "You can upload a stockfish-14-compatible .nnue file. See here for the detail: https://tests.stockfishchess.org/nns.",
+                        "Note that there might be an issue on Chrome/Chromium, which is currently under the investigation. If you want to try this feature, please check out Firefox.",
+                      ].join("\n")
+                    ),
+                },
+                "[?]"
               ),
             ]),
           ]),
