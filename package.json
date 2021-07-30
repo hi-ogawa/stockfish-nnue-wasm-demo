@@ -1,0 +1,16 @@
+{
+  "scripts": {
+    "link-lib": "rm -rf public/lib && ln -s $PWD/node_modules/stockfish-nnue.wasm public/lib",
+    "copy-lib": "rm -rf public/lib && mkdir -p public/lib && cp node_modules/stockfish-nnue.wasm/* public/lib",
+    "serve": "serve public --no-compression",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "deploy": "vercel deploy public --prod"
+  },
+  "dependencies": {
+    "prettier": "^2.3.2",
+    "serve": "^12.0.0",
+    "stockfish-nnue.wasm": "1.0.0-alpha.1",
+    "vercel": "^23.0.1"
+  }
+}

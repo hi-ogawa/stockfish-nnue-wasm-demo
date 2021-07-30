@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<head>
+  <meta charset="utf-8" />
+  <title>Testing by self play</title>
+</head>
+
+<!--
+  Run self play on browser to possibly identify some browser specific bugs
+-->
+
+<body>
+  <script src="https://cdn.jsdelivr.net/npm/chess.js@0.11.0/chess.js"></script>
+  <script src="./lib/stockfish.js"></script>
+
+  <script>
+    //
+    // Simple queue with async get (assume single consumer)
+    //
+    class Queue {
+      constructor() {
+        this.getter = null;
+        this.list = [];
+      }
+      async get() {
+        if (this.list.length > 0) {
+          return this.list.shift();
+        }
+        return await new Promise((resolve) => (this.getter = resolve));
+      }
+      put(x) {
+        if (this.getter) {
+          this.getter(x);
+          this.getter = null;
+          return;
+        }
+        this.list.push(x);
+      }
+    }
+
+    //
+    // UCI Engine wrapper
+    //
+    class EngineWrapper {
+      constructor(engine, log = console.log) {
+        this.engine = engine;
+        this.queue = new Queue();
+        this.engine.addMessageListener((line) => this.queue.put(line));
+        this.log = log;
+      }
+
+      send(command) {
+        this.log(">>(engine)", command);
+        this.engine.postMessage(command);
+      }
+
+      async receive() {
+        const line = await this.queue.get();
+        this.log("<<(engine)", line);
+        return line;
+      }
+
+      async receiveUntil(predicate) {
+        const lines = [];
+        while (true) {
+          const line = await this.receive();
+          lines.push(line);
+          if (predicate(line)) {
+            break;
+          }
+        }
+        return lines;
+      }
+
+      async initialize(options = {}) {
+        this.send("uci");
+        await this.receiveUntil((line) => line === "uciok");
+        for (const name in options) {
+          this.send(`setoption name ${name} value ${options[name]}`);
+        }
+        this.send("isready");
+        await this.receiveUntil((line) => line === "readyok");
+      }
+
+      async initializeGame() {
+        this.send("ucinewgame");
+        this.send("isready");
+        await this.receiveUntil((line) => line === "readyok");
+      }
+    }
+
+    const runSelfPlay = async (numGames = 1) => {
+      const stockfish = await Stockfish();
+      const engine = new EngineWrapper(stockfish, () => {});
+      await engine.initialize({ Threads: 2 });
+
+      for (let i = 0; i < numGames; i++) {
+        const chess = new Chess();
+        await engine.initializeGame();
+
+        while (!chess.game_over()) {
+          console.log(chess.ascii());
+
+          const fen = chess.fen();
+          console.log("fen:", fen);
+
+          engine.send(`position fen ${fen}`);
+          engine.send("isready");
+          await engine.receiveUntil((line) => line === "readyok");
+
+          engine.send("go movetime 1000");
+          const lines = await engine.receiveUntil((line) =>
+            line.startsWith("bestmove")
+          );
+          const last_line = lines[lines.length - 1];
+          const bestmove = last_line.split(" ")[1];
+          console.log("bestmove:", bestmove);
+
+          const move = {};
+          move.from = bestmove.substr(0, 2);
+          move.to = bestmove.substr(2, 2);
+          if (bestmove.length == 5) {
+            move.promotion = bestmove.substr(4, 1);
+          }
+          chess.move(move);
+        }
+
+        console.log(chess.pgn());
+      }
+    };
+  </script>
+</body>
